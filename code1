@@ -1,0 +1,72 @@
+
+!pip install gradio googletrans==4.0.0-rc1 requests --quiet
+
+import os
+import requests
+import gradio as gr
+from googletrans import Translator
+
+GROQ_API_KEY = ""  
+MODEL = "llama-3.1-8b-instant"
+
+translator = Translator()
+
+
+def groq_chat(prompt, system_msg="You are a helpful assistant.", max_tokens=600):
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": MODEL,
+        "max_completion_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    resp = requests.post(url, headers=headers, json=payload)
+    if resp.status_code == 200:
+        return resp.json()["choices"][0]["message"]["content"].strip()
+    else:
+        return f"⚠️ Error {resp.status_code}: {resp.text}"
+
+
+tamil_text = """நான் இந்த நிறுவனத்தை ஆரம்பிக்கும்போது என் கையில் பெரிய முதலீட்டோ தொழில் நுட்ப உதவியோ இல்லை இருந்தது ... பாரம்பரிய குறல்"""
+
+english_text = translator.translate(tamil_text, src='ta', dest='en').text
+
+
+ta_summary = groq_chat(f"இந்த உரையை தமிழில் சுருக்கமாக எழுது:\n\n{tamil_text}")
+en_summary = groq_chat(f"Summarize the following in English:\n\n{english_text}")
+
+
+def qa_func(question):
+    if any('\u0B80' <= ch <= '\u0BFF' for ch in question):
+        sys = "Use ONLY the Tamil passage to answer in Tamil."
+        user = f"உரை:\n{tamil_text}\n\nகேள்வி: {question}"
+    else:
+        sys = "Use ONLY the Tamil passage (translated) to answer in English."
+        user = f"Passage (English translation):\n{english_text}\n\nQuestion: {question}"
+    return groq_chat(user, system_msg=sys)
+
+
+with gr.Blocks() as demo:
+    gr.Markdown("## 🌊 Punal Legacy – Summaries & Q&A")
+
+    with gr.Row():
+        with gr.Column():
+            gr.Markdown("### 📌 Tamil Summary")
+            ta_out = gr.Textbox(value=ta_summary, lines=8, interactive=False)
+        with gr.Column():
+            gr.Markdown("### 📌 English Summary")
+            en_out = gr.Textbox(value=en_summary, lines=8, interactive=False)
+
+    gr.Markdown("### ❓ Ask a Question (Tamil or English)")
+    q_in = gr.Textbox(placeholder="Type your question here...")
+    a_out = gr.Textbox(label="🧠 Answer")
+
+    q_in.submit(qa_func, inputs=q_in, outputs=a_out)
+
+demo.launch(share=True)
